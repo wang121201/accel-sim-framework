@@ -9,7 +9,7 @@
 #include "abstract_hardware_model.h"
 #include "trace_opcode.h"
 
-#define AMPERE_RTX_BINART_VERSION 86
+#define AMPERE_RTX_BINART_VERSION 89
 #define AMPERE_A100_BINART_VERSION 80
 
 // TO DO: moving this to a yml or def files

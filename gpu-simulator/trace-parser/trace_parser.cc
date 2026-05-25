@@ -404,7 +404,7 @@ void trace_parser::get_next_threadblock_traces(
         assert(start_of_tb_stream_found);
         sscanf(line.c_str(), "thread block = %d,%d,%d", &block_id_x,
                &block_id_y, &block_id_z);
-        std::cout << line << std::endl;
+        // std::cout << line << std::endl;
       } else if (string1 == "warp") {
         // the start of new warp stream
         assert(start_of_tb_stream_found);
