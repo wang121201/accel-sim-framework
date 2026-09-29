@@ -698,8 +698,10 @@ static void enter_kernel_launch(CUcontext ctx, CUfunction func,
   int binary_version =
       get_attr_with_kernel_fallback(func, CU_FUNC_ATTRIBUTE_BINARY_VERSION);
 
-  // Instrument the kernel if needed
-  instrument_function_if_needed(ctx, func);
+  // Avoid disassembling unrelated warmup kernels; first active launch still instruments fully.
+  if (active_region) {
+    instrument_function_if_needed(ctx, func);
+  }
 
   // Enable or disable tracing based on the active region
   if (active_region) {
