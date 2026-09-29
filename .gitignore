@@ -20,3 +20,11 @@ compile_commands.json
 .claude
 CLAUDE.md
 .cursor
+
+# Local experiment outputs (large: traces, simulations, perf counters)
+experiments/
+perf_counter*.csv.gz
+gpgpu_inst_stats.txt
+util/tuner/stats.txt
+util/tuner/calibration_runs/
+util/tuner/gpu-app-collection-partial/
