@@ -41,6 +41,7 @@
 #include <vector>
 
 #include "../ISA_Def/accelwattch_component_mapping.h"
+#include "../ISA_Def/ada_opcode.h"
 #include "../ISA_Def/ampere_opcode.h"
 #include "../ISA_Def/hopper_opcode.h"
 #include "../ISA_Def/kepler_opcode.h"
@@ -57,6 +58,7 @@
 #include "gpgpusim_entrypoint.h"
 #include "option_parser.h"
 #include "trace_driven.h"
+#include "trace_generic_memory.h"
 
 bool trace_shd_warp_t::handle_replay_region_exit() {
   if (!get_trywait_acquired()) {
@@ -164,7 +166,7 @@ void trace_shd_warp_t::clear() {
 }
 
 // functional_done
-bool trace_shd_warp_t::trace_done() { return trace_pc == trace_total_count(); }
+bool trace_shd_warp_t::trace_done() { return trace_pc >= trace_total_count(); }
 
 address_type trace_shd_warp_t::get_start_trace_pc() {
   if (m_stream) {
@@ -198,6 +200,8 @@ trace_kernel_info_t::trace_kernel_info_t(dim3 gridDim, dim3 blockDim,
   // resolve the binary version
   if (kernel_trace_info->binary_verion == HOPPER_H100_BINART_VERSION)
     OpcodeMap = &Hopper_OpcodeMap;
+  else if (kernel_trace_info->binary_verion == ADA_RTX_BINART_VERSION)
+    OpcodeMap = &Ada_OpcodeMap;
   else if (kernel_trace_info->binary_verion == AMPERE_RTX_BINART_VERSION ||
            kernel_trace_info->binary_verion == AMPERE_A100_BINART_VERSION)
     OpcodeMap = &Ampere_OpcodeMap;
@@ -214,7 +218,7 @@ trace_kernel_info_t::trace_kernel_info_t(dim3 gridDim, dim3 blockDim,
     printf("unsupported binary version: %d\n",
            kernel_trace_info->binary_verion);
     fflush(stdout);
-    exit(0);
+    exit(EXIT_FAILURE);
   }
 }
 
@@ -309,7 +313,7 @@ bool trace_warp_inst_t::parse_from_trace_struct(
   } else {
     std::cout << "ERROR:  undefined instruction : " << trace.opcode
               << " Opcode: " << opcode1 << std::endl;
-    assert(0 && "undefined instruction");
+    std::exit(EXIT_FAILURE);  // Unknown ISA must never become a timing result.
   }
 
   // Parse the SASS opcode string for instructions that requires special
@@ -471,16 +475,14 @@ bool trace_warp_inst_t::parse_from_trace_struct(
         // check the first active address
         for (unsigned i = 0; i < warp_size(); ++i)
           if (active_mask.test(i)) {
-            if (trace.memadd_info->addrs[i] >=
-                    kernel_trace_info->shmem_base_addr &&
-                trace.memadd_info->addrs[i] <
-                    kernel_trace_info->local_base_addr)
+            const trace_generic_space generic_space =
+                classify_trace_generic_space(
+                    trace.memadd_info->addrs[i],
+                    kernel_trace_info->shmem_base_addr,
+                    kernel_trace_info->local_base_addr);
+            if (generic_space == trace_generic_space::shared)
               space.set_type(shared_space);
-            else if (trace.memadd_info->addrs[i] >=
-                         kernel_trace_info->local_base_addr &&
-                     trace.memadd_info->addrs[i] <
-                         kernel_trace_info->local_base_addr +
-                             LOCAL_MEM_SIZE_MAX) {
+            else if (generic_space == trace_generic_space::local) {
               space.set_type(local_space);
               cache_op = CACHE_ALL;
             } else {
@@ -489,6 +491,14 @@ bool trace_warp_inst_t::parse_from_trace_struct(
             }
             break;
           }
+        // Local diagnostic: a generic LD/ST with no active lane would leave
+        // `space` at undefined_space, which no memory path can service.
+        if (space.get_type() == undefined_space) {
+          printf(
+              "GPGPU-SIM TRACE WARNING: generic %s at pc=0x%x has no active "
+              "lane; mask=0x%x\n",
+              trace.opcode.c_str(), trace.m_pc, trace.mask);
+        }
       }
 
       break;
@@ -1038,24 +1048,62 @@ const warp_inst_t *trace_shader_core_ctx::get_next_inst(unsigned warp_id,
       static_cast<trace_shd_warp_t *>(m_warp[warp_id]);
   const trace_warp_inst_t *ret = m_trace_warp->get_next_trace_inst();
   if (ret == NULL && m_trace_warp->trace_done()) {
-    // Block warp from exiting if:
-    // 1. There are still instructions in the pipeline
-    // 2. The warp is waiting at a barrier
-    // 3. The warp still has outstanding stores
-    // 4. The warp still has pending writes
-    if (!m_warp[warp_id]->inst_in_pipeline() &&
-        !m_barriers.warp_waiting_at_barrier(warp_id) &&
-        m_warp[warp_id]->stores_done() &&
-        !m_scoreboard->pendingWrites(warp_id)) {
-      for (unsigned t = 0; t < m_warp_size; t++) {
-        if (m_warp[warp_id]->test_active(t)) {
-          m_warp[warp_id]->set_completed(t);
-        }
-      }
-      m_barriers.warp_exit(warp_id);
-    }
+    try_retire_finished_warp(warp_id);
   }
   return ret;
+}
+
+// A warp whose trace is exhausted can only be marked complete once its
+// in-flight work has drained. That drain is driven by the pipeline, which no
+// longer fetches for this warp, so the check has to be re-evaluated every
+// cycle rather than only when a new instruction is requested.
+void trace_shader_core_ctx::try_retire_finished_warp(unsigned warp_id) {
+  trace_shd_warp_t *m_trace_warp =
+      static_cast<trace_shd_warp_t *>(m_warp[warp_id]);
+  if (!m_trace_warp->trace_done()) return;
+  if (m_warp[warp_id]->get_n_completed() == m_config->warp_size) return;
+
+  // Block warp from exiting if:
+  // 1. There are still instructions in the pipeline
+  // 2. The warp is waiting at a barrier
+  // 3. The warp still has outstanding stores
+  // 4. The warp still has pending writes
+  const bool in_pipe = m_warp[warp_id]->inst_in_pipeline();
+  const bool at_bar = m_barriers.warp_waiting_at_barrier(warp_id);
+  const bool st_done = m_warp[warp_id]->stores_done();
+  const bool pend_wr = m_scoreboard->pendingWrites(warp_id);
+  if (in_pipe || at_bar || !st_done || pend_wr) {
+    // Local diagnostic: record the gate that blocked the most recent attempt.
+    m_last_block_in_pipe = in_pipe;
+    m_last_block_at_barrier = at_bar;
+    m_last_block_stores_done = st_done;
+    m_last_block_pending_writes = pend_wr;
+    return;
+  }
+
+  for (unsigned t = 0; t < m_config->warp_size; t++) {
+    if (m_warp[warp_id]->test_active(t)) {
+      m_warp[warp_id]->set_completed(t);
+    }
+  }
+  m_barriers.warp_exit(warp_id);
+}
+
+// Re-run the deferred retirement check for every warp that has finished its
+// trace but has not been marked complete yet.
+void trace_shader_core_ctx::cycle() {
+  shader_core_ctx::cycle();
+  m_cycle_calls++;
+  for (unsigned w = 0; w < m_config->max_warps_per_shader; w++) {
+    if (m_warp[w] == NULL) continue;
+    if (m_warp[w]->done_exit()) continue;
+    trace_shd_warp_t *tw = static_cast<trace_shd_warp_t *>(m_warp[w]);
+    if (tw->trace_done() && m_warp[w]->get_n_completed() < m_config->warp_size) {
+      m_retire_checks++;
+      m_last_retire_check_cycle = m_gpu->gpu_tot_sim_cycle;
+    }
+    try_retire_finished_warp(w);
+  }
 }
 
 void trace_shader_core_ctx::updateSIMTStack(unsigned warpId,

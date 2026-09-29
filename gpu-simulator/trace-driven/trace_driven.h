@@ -165,6 +165,8 @@ class trace_shd_warp_t : public shd_warp_t {
   const trace_warp_inst_t *get_next_trace_inst();
   void clear();
   bool trace_done();
+  // Local diagnostic hook for gpgpu_sim::deadlock_check().
+  bool trace_exhausted() const override { return trace_pc >= trace_total_count(); }
   unsigned trace_total_count() const;  // total instructions for this warp
   address_type get_start_trace_pc();
   virtual address_type get_pc();
@@ -248,6 +250,18 @@ class trace_shader_core_ctx : public shader_core_ctx {
                                    gpgpu_t *gpu);
   virtual void create_shd_warp();
   virtual const warp_inst_t *get_next_inst(unsigned warp_id, address_type pc);
+  virtual void cycle();
+  unsigned long long last_retire_check_cycle() const override {
+    return m_last_retire_check_cycle;
+  }
+  unsigned long long cycle_calls() const override { return m_cycle_calls; }
+  unsigned long long retire_checks() const override { return m_retire_checks; }
+  bool last_block_in_pipe() const override { return m_last_block_in_pipe; }
+  bool last_block_at_barrier() const override { return m_last_block_at_barrier; }
+  bool last_block_stores_done() const override { return m_last_block_stores_done; }
+  bool last_block_pending_writes() const override {
+    return m_last_block_pending_writes;
+  }
   virtual void updateSIMTStack(unsigned warpId, warp_inst_t *inst);
   virtual void get_pdom_stack_top_info(unsigned warp_id, const warp_inst_t *pI,
                                        unsigned *pc, unsigned *rpc);
@@ -258,6 +272,17 @@ class trace_shader_core_ctx : public shader_core_ctx {
                           unsigned sch_id);
 
  private:
+  // Mark a warp complete once its trace is exhausted and all in-flight work
+  // has drained. Safe to call repeatedly.
+  void try_retire_finished_warp(unsigned warp_id);
+  // Local diagnostic: last cycle at which the retirement check ran.
+  unsigned long long m_last_retire_check_cycle = 0;
+  unsigned long long m_cycle_calls = 0;
+  unsigned long long m_retire_checks = 0;
+  bool m_last_block_in_pipe = false;
+  bool m_last_block_at_barrier = false;
+  bool m_last_block_stores_done = true;
+  bool m_last_block_pending_writes = false;
   void init_traces(unsigned start_warp, unsigned end_warp,
                    kernel_info_t &kernel);
 };
