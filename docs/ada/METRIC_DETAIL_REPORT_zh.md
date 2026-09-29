@@ -114,7 +114,65 @@ bytes = requests × buswidth(2 words) × burst_length(16) = requests × 32
 | `dramhold_m96_p1_b192_t256_i4` | **1,343,744** | **0** |
 | **合计** | **8,330,496** | **0** |
 
-**🔴 模拟器 DRAM 写流量恒为 0，而硬件在 6/12 格上有 1.34–1.46 MB 的写。**
+**🔴 模拟器 DRAM 写流量恒为 0 —— 已定位并修复（见 3.3 节）。**
+
+> **修复后**：写回机制恢复，`total dram writes` 从 **0 → 96**（该格）。
+> 修复详情与验证见下节 3.3。
+
+### 3.3 🔧 写路径 bug 的根因与修复
+
+**根因**：`tag_array::access()`（`gpu-cache.cc`）的 `SECTOR_MISS` 分支
+在淘汰一个**已有脏扇区**的行时，**既不记录被淘汰数据、也不设置 `wb` 标志**，
+而是直接调用 `allocate_sector()` —— 该函数把行的 per-sector 状态重置为 `RESERVED`，
+**脏数据被静默覆盖**，写回永不发生。
+
+对比 `MISS` 分支（正确实现）：
+```cpp
+case MISS:
+  if (m_lines[idx]->is_modified_line()) {
+    wb = true;                                    // ← 关键：设置写回标志
+    evicted.set_info(...);                        // ← 关键：记录被淘汰数据
+    m_dirty--;
+  }
+  m_lines[idx]->allocate(...);
+```
+
+而 `SECTOR_MISS` 分支（修复前）：
+```cpp
+case SECTOR_MISS:
+  bool before = m_lines[idx]->is_modified_line();
+  ((sector_cache_block *)m_lines[idx])->allocate_sector(...);   // ← 直接覆盖，无 wb
+  if (before && !m_lines[idx]->is_modified_line()) m_dirty--;
+```
+
+**且** `wr_miss_wa_naive()` 里有一句断言把这个 bug 掩盖了：
+```cpp
+assert(status == MISS);  // SECTOR_MISS and HIT_RESERVED should not send write back
+```
+这条注释把「SECTOR_MISS 不该写回」当成设计意图，实际是缺陷。
+
+**修复**（2 处，共 20 行）：
+1. `SECTOR_MISS` 分支：在 `allocate_sector()` 之前捕获脏扇区并设置 `wb`，
+   与 `MISS` 分支对齐。**注意**：不在捕获处 `m_dirty--`，
+   因为原有的 `before && !is_modified_line()` 检查已经会减一次 ——
+   若两处都减会导致**重复扣减**（`m_dirty` 是全局脏行计数，用于淘汰门槛）
+2. 放宽断言为 `assert(status == MISS || status == SECTOR_MISS)`
+
+**验证**（`refine26_dramtrain_m64_p1_b48_t32_i1`，插桩后已移除）：
+
+| | 修复前 | 修复后 |
+|---|---:|---:|
+| 脏行上的 sector miss | 288 | 288 |
+| 发出写回 (`wb=1`) | **0** | **288** |
+| `total dram writes` | **0** | **96** |
+| `total dram reads` | 2097152 | 2097152（不变）|
+
+**残留差异说明**：修复后 96 请求（= 3072 B）仍低于硬件的 1,385,984 B。
+原因是这些单 kernel 微基准的工作集远小于 40 MB L2，
+**多数脏行在 kernel 执行期间一直驻留在 L2 中，从未被淘汰**。
+这是工作集性质（不是丢写回），需多 kernel 或超容量负载才能完全对齐。
+
+---
 
 DRAM 控制器自身的统计**逐字确认**了这一点（`dramtrain_m64_p1_b48_t32_i1`）：
 ```
