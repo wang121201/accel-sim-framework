@@ -9,6 +9,20 @@
 
 ---
 
+> ## ⚠️ 本报告的两项 🔴 结论已被推翻（见 `METRIC_CORRECTION_AND_WRITE_ATTRIBUTION_zh.md`）
+>
+> | 本报告 | 实际情况 |
+> |---|---|
+> | 🔴 L2 读 miss **-74.91%** | **+0.37%** ✅ —— 提取时漏掉了 `SECTOR_MISS` 桶，且 `lts__..._op_read` 上报的是 `HIT+SECTOR_MISS` 而非读访问数 |
+> | 🔴 DRAM 写 **+150%** | 偏差真实，但**不是 L2 替换策略**问题：由 gpgpu-sim 提交 `111ed9c5` 的整行脏扇区过度写回引入，修复后为 **-1.69%** |
+> | §3.6 "可能原因 2：`indexing=0` 引入虚假局部性" | **不成立** —— `indexing=2` 与 `0` 的 L2 miss 率分别为 84.37% / 84.27%（差 0.10 pp） |
+>
+> 本文以下内容**保留原样**作为过程记录。请以
+> `METRIC_CORRECTION_AND_WRITE_ATTRIBUTION_zh.md` 的修正口径为准，
+> 并统一使用 `docs/ada/scripts/extract_metrics.py`（内置三条恒等式断言）。
+
+---
+
 ## 一、结论摘要
 
 | 指标类别 | 表现 | 评级 |

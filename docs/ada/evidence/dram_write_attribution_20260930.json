@@ -1,0 +1,121 @@
+{
+  "dram_atom_bytes": 32,
+  "prefix_ab": {
+    "nofix": {
+      "cycles": 7971791,
+      "write_bytes": 12613952,
+      "read_bytes": 568828416
+    },
+    "fix111": {
+      "cycles": 8494194,
+      "write_bytes": 34378464,
+      "read_bytes": 568847616
+    },
+    "myfix": {
+      "cycles": 7971791,
+      "write_bytes": 12614112,
+      "read_bytes": 568828416
+    }
+  },
+  "full_totals": {
+    "idx2_nofix": {
+      "cycles": 118444136,
+      "write_bytes": 72064160,
+      "read_bytes": 9277476256
+    },
+    "idx0_fix111": {
+      "cycles": 101112014,
+      "write_bytes": 182248320,
+      "read_bytes": 9269755424
+    },
+    "idx0_myfix_partial": {
+      "cycles": 28225281,
+      "write_bytes": 53813600,
+      "read_bytes": 2121464320
+    }
+  },
+  "matched_read_bytes_tracking": [
+    {
+      "read_bytes": 176953088,
+      "fix111_write_bytes": 9788000,
+      "myfix_write_bytes": 2875360,
+      "ratio": 0.29376379239885575
+    },
+    {
+      "read_bytes": 353889472,
+      "fix111_write_bytes": 21681824,
+      "myfix_write_bytes": 7718496,
+      "ratio": 0.355989237805823
+    },
+    {
+      "read_bytes": 530854592,
+      "fix111_write_bytes": 32061024,
+      "myfix_write_bytes": 12535904,
+      "ratio": 0.3910013604057063
+    },
+    {
+      "read_bytes": 707750368,
+      "fix111_write_bytes": 43803712,
+      "myfix_write_bytes": 17324128,
+      "ratio": 0.3954945188206881
+    },
+    {
+      "read_bytes": 884670912,
+      "fix111_write_bytes": 54576608,
+      "myfix_write_bytes": 21671008,
+      "ratio": 0.39707502525624166
+    },
+    {
+      "read_bytes": 1061629248,
+      "fix111_write_bytes": 65888512,
+      "myfix_write_bytes": 26174176,
+      "ratio": 0.39724946285021584
+    },
+    {
+      "read_bytes": 1238572384,
+      "fix111_write_bytes": 77123616,
+      "myfix_write_bytes": 30817376,
+      "ratio": 0.39958416887506937
+    },
+    {
+      "read_bytes": 1415488192,
+      "fix111_write_bytes": 87919904,
+      "myfix_write_bytes": 34621024,
+      "ratio": 0.393779137884409
+    },
+    {
+      "read_bytes": 1592446752,
+      "fix111_write_bytes": 98825568,
+      "myfix_write_bytes": 39283168,
+      "ratio": 0.3975000477609195
+    },
+    {
+      "read_bytes": 1769361504,
+      "fix111_write_bytes": 110510432,
+      "myfix_write_bytes": 44121440,
+      "ratio": 0.3992513575550949
+    },
+    {
+      "read_bytes": 1946278304,
+      "fix111_write_bytes": 122328544,
+      "myfix_write_bytes": 48978272,
+      "ratio": 0.40038302098976997
+    },
+    {
+      "read_bytes": 2123227680,
+      "fix111_write_bytes": 132707552,
+      "myfix_write_bytes": 53817056,
+      "ratio": 0.4055312240255928
+    }
+  ],
+  "projection": {
+    "method": "match the two full runs on cumulative DRAM *read* bytes (a writeback-fix-invariant progress proxy) and apply the steady-state myfix/fix111 write-bytes ratio to fix111's completed full-run total",
+    "progress_proxy": "cumulative dram_read_bytes",
+    "steady_state_ratio_mean": 0.39903977427729587,
+    "steady_state_ratio_min": 0.393779137884409,
+    "steady_state_ratio_max": 0.4055312240255928,
+    "samples": 7,
+    "fix111_full_write_bytes": 182248320,
+    "projected_myfix_full_write_bytes": 72724328.47521639
+  }
+}

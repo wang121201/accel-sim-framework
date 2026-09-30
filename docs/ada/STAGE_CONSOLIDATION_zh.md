@@ -6,6 +6,27 @@
 
 ---
 
+> ## ⚠️ 后续修正（2026-10-01，见 `METRIC_CORRECTION_AND_WRITE_ATTRIBUTION_zh.md`）
+>
+> 本报告的 §3（硬件对比）与 §七（已知限制 / 后续建议）基于**错误的 L2 指标口径**，已修正：
+>
+> | 本报告 | 修正后 |
+> |---|---|
+> | 🔴 L2 读 miss -74.91% | **+0.37%**（提取时漏掉 `SECTOR_MISS` 桶） |
+> | 🟡 L2 读扇区 -20.05% | **+1.31%**（上报值是 `HIT+SECTOR_MISS`，非读访问数） |
+> | 🔴 DRAM 写 +150% | 真实；根因是提交 `111ed9c5` 的**整行脏扇区过度写回**，已修复 → **-0.22%**（投影） |
+> | §七建议 1「优先排查 L2 替换策略」 | **不需要**：前提已被证伪 |
+> | §七建议 4「验证 `indexing=2` 下的 L2 miss 率」 | **已完成**：84.37% vs 84.27%，差 0.10 pp，无影响 |
+>
+> 新增交付：`docs/ada/scripts/extract_metrics.py`（唯一口径 + 三条恒等式断言）、
+> `docs/ada/scripts/attribute_dram_write.py`、
+> `docs/ada/evidence/dram_write_attribution_20260930.json`、
+> `docs/ada/DRAM_MODEL_AND_HBFSIM_EVALUATION_zh.md`。
+> gpgpu-sim 侧新增修复分支 `gpu-cache.cc` 的 `tag_array::access()` SECTOR_MISS 写回。
+
+---
+
+
 ## 一、阶段成果总览
 
 | # | 成果 | 状态 | 证据 |
