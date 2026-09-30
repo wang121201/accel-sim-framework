@@ -1,0 +1,46 @@
+{
+  "schema": "ADA_METRIC_GOLDEN_V1",
+  "why": "Pins the extracted counter values for frozen two-row perf_counter fixtures. The identity checks catch a structurally wrong aggregation; these catch a numerically different one, which is how the dropped SECTOR_MISS escaped review.",
+  "fixtures": {
+    "qwen_p32d2_full_c3_wrfix.final_rows.csv.gz": {
+      "cycles.gpu_tot_sim_cycle": 101112014,
+      "l1.read.accesses": 405673425,
+      "l1.read.misses": 282052254,
+      "l1.write.accesses": 3701033,
+      "l1.write.misses": 2655462,
+      "l2.read.accesses": 343760193,
+      "l2.read.HIT": 54026091,
+      "l2.read.MISS": 72420357,
+      "l2.read.SECTOR_MISS": 217259500,
+      "l2.read.misses": 289679857,
+      "l2.read.misses_miss_only": 72420357,
+      "l2.write.accesses": 3701033,
+      "l2.write.misses": 2248258,
+      "l2.write.WRITE_ALLOCATED": 2248258,
+      "dram.reads": 289679857,
+      "dram.read_bytes": 9269755424,
+      "dram.writes": 5695260,
+      "dram.write_bytes": 182248320
+    },
+    "qwen_p32d2_full_idx2_nofix.final_rows.csv.gz": {
+      "cycles.gpu_tot_sim_cycle": 118444136,
+      "l1.read.accesses": 405673425,
+      "l1.read.misses": 281902352,
+      "l1.write.accesses": 3701033,
+      "l1.write.misses": 2637027,
+      "l2.read.accesses": 343610760,
+      "l2.read.HIT": 53636943,
+      "l2.read.MISS": 72480676,
+      "l2.read.SECTOR_MISS": 217440457,
+      "l2.read.misses": 289921133,
+      "l2.read.misses_miss_only": 72480676,
+      "l2.write.accesses": 3701033,
+      "l2.write.misses": 2178698,
+      "l2.write.WRITE_ALLOCATED": 2178698,
+      "dram.reads": 289921133,
+      "dram.read_bytes": 9277476256,
+      "dram.writes": 2252005,
+      "dram.write_bytes": 72064160
+    }
+  }
+}

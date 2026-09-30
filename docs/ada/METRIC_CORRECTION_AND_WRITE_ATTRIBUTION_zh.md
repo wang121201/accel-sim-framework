@@ -378,6 +378,57 @@ python3 docs/ada/scripts/check_l2_write_zero.py --selftest
 
 > 这个检查器**如果当时就存在，`111ed9c5` 会在提交前被拦住**。
 
+### 3.7 CI 入口：`run_ci_checks.sh`（0.3 s，不需 GPU / 不需 build）
+
+两处防线合并成**一个入口**：
+
+```bash
+./docs/ada/scripts/run_ci_checks.sh     # 全绿 exit 0，任一失败 exit 1
+```
+
+它跑 5 项检查（**实测 0.31 s**），全部基于 `docs/ada/evidence/` 下的**冻结夹具**，
+不依赖 `experiments/`（323 GB）、不依赖模拟器二进制、不依赖 GPU：
+
+| 检查 | 防住什么 |
+|---|---|
+| `extract_metrics.py --golden` ×2 | **数值口径漂移**：18 个钉住值（含 `l2.read.misses` 与 `l2.read.misses_miss_only` 两个都钉） |
+| `extract_metrics.py --assert-checks` ×2 | **结构性口径错误**：三条恒等式 |
+| `check_l2_write_zero.py --selftest` | **写回虚增**：断言判定器能区分修复前/后二进制 |
+
+**夹具**是真实运行的 `perf_counter` 的**头行 + 末行**（dump 是累计值，末行即总量），
+从 ~1 GB 压到 **18 KB**，数值逐位一致（已核对）：
+
+```
+docs/ada/evidence/fixtures/qwen_p32d2_full_c3_wrfix.final_rows.csv.gz    18 KB
+docs/ada/evidence/fixtures/qwen_p32d2_full_idx2_nofix.final_rows.csv.gz  18 KB
+docs/ada/evidence/fixtures/golden_metrics.json
+```
+
+**反向验证（都实测过）**：
+
+- 把 `l2.read.misses` 钉成 `misses_miss_only`（即复现原报告的口径错误）→
+  `FAIL ... expected 72,420,357 got 289,679,857`，**exit 1**
+- `check_l2_write_zero.py` 在 `111ed9c5` 基线上 **6/6 FAIL**，在本次修复上 **6/6 PASS**
+
+**接到任何 harness**（三种都可用，不需要改构建系统）：
+
+```bash
+# 1) make：包一层，避免 gpu-simulator/Makefile 末行 include 强制 checkenv
+ci-checks:
+	./docs/ada/scripts/run_ci_checks.sh
+
+# 2) ctest
+add_test(NAME ada_accuracy COMMAND ${CMAKE_SOURCE_DIR}/docs/ada/scripts/run_ci_checks.sh)
+
+# 3) GitHub Actions / pre-commit
+- run: ./docs/ada/scripts/run_ci_checks.sh
+```
+
+> 未改 `gpu-simulator/Makefile`：它末行的 `include $(BUILD_DIR)/main.makedepend`
+> 会在任何 target 上强制走 `checkenv`（需 `source setup_environment.sh`），
+> 与"CI 不该依赖构建环境"冲突。改 `-include` 属于构建语义变更，留给后续决定。
+
+
 ---
 
 ## 四、任务 3：`indexing=2` 下的 L2 miss 率
@@ -493,6 +544,9 @@ python3 docs/ada/scripts/attribute_dram_write.py \
 # 12 格微基准的 DRAM 写判定（6 格参与、6 格 excluded）+ 自检
 python3 docs/ada/scripts/check_l2_write_zero.py --selftest
 python3 docs/ada/scripts/check_l2_write_zero.py --judge /tmp/wr_regress_wbfix
+
+# 一次跑完全部快速检查（0.3 s，不需 GPU / 不需 build）
+./docs/ada/scripts/run_ci_checks.sh
 
 # 重建三个二进制并复跑前缀 A/B
 #   1. nofix  : git show 111ed9c5^:src/gpgpu-sim/gpu-cache.cc

@@ -43,6 +43,7 @@ import gzip
 import json
 import re
 import sys
+from pathlib import Path
 
 # A DRAM transaction moves `dram_atom_size` bytes; in this configuration it is
 # burst_length(16) x buswidth(2) x chips-per-controller(1) = 32 B, i.e. one
@@ -214,16 +215,72 @@ def _print_level(label: str, level: dict) -> None:
         print()
 
 
+def freeze_fixture(perf_counter: str, out: str) -> int:
+    """Write a two-row fixture: the header plus the final (cumulative) row.
+
+    The whole run is not needed to reproduce the counters -- the dump is
+    cumulative, so the last row *is* the run total. Keeping just those two rows
+    turns a 1 GB dump into a ~60 KB fixture that carries the same numbers, which
+    is what lets the identity checks run in CI without the experiments tree.
+    """
+    opener = gzip.open if perf_counter.endswith(".gz") else open
+    with opener(perf_counter, "rt") as handle:
+        header = handle.readline()
+        last = None
+        for line in handle:
+            if line.strip():
+                last = line
+    if last is None:
+        raise SystemExit(f"no data rows in {perf_counter}")
+
+    Path(out).parent.mkdir(parents=True, exist_ok=True)
+    with gzip.open(out, "wt") as handle:
+        handle.write(header)
+        handle.write(last)
+    return 0
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("perf_counter", help="perf_counter_*.csv[.gz]")
     ap.add_argument("--json", action="store_true", help="emit JSON only")
+    ap.add_argument(
+        "--assert-checks",
+        action="store_true",
+        help=(
+            "exit non-zero if any identity check fails. Use this in CI: the "
+            "checks are what caught the mis-derived L2 read figures, so a "
+            "failure means the extraction口径 has drifted again."
+        ),
+    )
+    ap.add_argument(
+        "--freeze-fixture",
+        metavar="OUT",
+        help="write header+final row to OUT as a small CI fixture and exit",
+    )
+    ap.add_argument(
+        "--golden",
+        metavar="FILE",
+        help="assert the extracted counters match the frozen golden values in FILE",
+    )
+    ap.add_argument(
+        "--freeze-golden",
+        metavar="FILE",
+        help="add/refresh this perf_counter's entry in the golden file and exit",
+    )
     args = ap.parse_args()
+
+    if args.freeze_fixture:
+        return freeze_fixture(args.perf_counter, args.freeze_fixture)
+    if args.freeze_golden:
+        return freeze_golden(args.perf_counter, args.freeze_golden)
+    if args.golden:
+        return check_golden(args.perf_counter, args.golden)
 
     data = extract(args.perf_counter)
     if args.json:
         print(json.dumps(data, indent=2))
-        return 0
+        return 0 if not args.assert_checks else _verdict(data)
 
     d = data["dram"]
     print(f"source: {data['source']}")
@@ -240,6 +297,103 @@ def main() -> int:
         for k, v in check.items():
             if k != "matches":
                 print(f"       {k} = {v:,}")
+    if args.assert_checks:
+        return _verdict(data)
+    return 0
+
+
+def _verdict(data: dict) -> int:
+    failed = [n for n, c in data["checks"].items() if not c["matches"]]
+    if failed:
+        print(f"\nFAIL: {len(failed)} identity check(s) failed", file=sys.stderr)
+        for n in failed:
+            print(f"  {n}", file=sys.stderr)
+        return 1
+    print(f"\nOK: all {len(data['checks'])} identity checks pass")
+    return 0
+
+
+# The counters a golden fixture pins. Deliberately includes both the correct
+# L2 read definition (`misses`) and the one the old comparison used
+# (`misses_miss_only`), so a change that silently swaps them shows up as a diff
+# rather than as a plausible-looking number.
+GOLDEN_PATHS = (
+    ("cycles", "gpu_tot_sim_cycle"),
+    ("l1", "read", "accesses"),
+    ("l1", "read", "misses"),
+    ("l1", "write", "accesses"),
+    ("l1", "write", "misses"),
+    ("l2", "read", "accesses"),
+    ("l2", "read", "HIT"),
+    ("l2", "read", "MISS"),
+    ("l2", "read", "SECTOR_MISS"),
+    ("l2", "read", "misses"),
+    ("l2", "read", "misses_miss_only"),
+    ("l2", "write", "accesses"),
+    ("l2", "write", "misses"),
+    ("l2", "write", "WRITE_ALLOCATED"),
+    ("dram", "reads"),
+    ("dram", "read_bytes"),
+    ("dram", "writes"),
+    ("dram", "write_bytes"),
+)
+
+
+def _dig(data: dict, path: tuple):
+    node = data
+    for key in path:
+        node = node[key]
+    return node
+
+
+def _golden_entry(data: dict) -> dict:
+    return {".".join(p): _dig(data, p) for p in GOLDEN_PATHS}
+
+
+def freeze_golden(perf_counter: str, out: str) -> int:
+    """Add or refresh this fixture's entry in a golden-metrics file."""
+    path = Path(out)
+    doc = json.loads(path.read_text()) if path.is_file() else {
+        "schema": "ADA_METRIC_GOLDEN_V1",
+        "why": (
+            "Pins the extracted counter values for frozen two-row perf_counter "
+            "fixtures. The identity checks catch a structurally wrong "
+            "aggregation; these catch a numerically different one, which is how "
+            "the dropped SECTOR_MISS escaped review."
+        ),
+        "fixtures": {},
+    }
+    key = Path(perf_counter).name
+    doc["fixtures"][key] = _golden_entry(extract(perf_counter))
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(doc, indent=2) + "\n")
+    print(f"wrote {path} [{key}]")
+    return 0
+
+
+def check_golden(perf_counter: str, golden: str) -> int:
+    doc = json.loads(Path(golden).read_text())
+    key = Path(perf_counter).name
+    if key not in doc["fixtures"]:
+        print(f"FAIL: {key} is not in {golden}", file=sys.stderr)
+        return 1
+    expected = doc["fixtures"][key]
+    actual = _golden_entry(extract(perf_counter))
+    bad = [
+        (k, expected[k], actual[k])
+        for k in expected
+        if k in actual and actual[k] != expected[k]
+    ]
+    missing = [k for k in expected if k not in actual]
+    if missing:
+        print(f"FAIL: {key} lost counters: {missing}", file=sys.stderr)
+        return 1
+    if bad:
+        print(f"FAIL: {key} drifted from the frozen golden values:", file=sys.stderr)
+        for k, e, a in bad:
+            print(f"  {k}: expected {e:,} got {a:,}", file=sys.stderr)
+        return 1
+    print(f"OK: {key} matches all {len(expected)} frozen golden values")
     return 0
 
 
