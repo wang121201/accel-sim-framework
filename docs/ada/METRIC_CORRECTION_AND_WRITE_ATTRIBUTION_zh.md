@@ -14,11 +14,16 @@
 |---|---|---|
 | 🔴 L2 读 miss **-74.91%** | **+0.37%** ✅（误差被夸大 ~200 倍） | 漏计了 `SECTOR_MISS` 桶 |
 | 🟡 L2 读扇区 **-20.05%** | **+1.31%** ✅ | 上报的是 `HIT + SECTOR_MISS`，不是读访问数 |
-| 🔴 DRAM 写 **+150%** | 真实，但**不是** L2 替换策略问题 | 由 gpgpu-sim 提交 `111ed9c5` 引入；修复后 **-0.22%** ✅ |
+| 🔴 DRAM 写 **+150%** | 真实，但**不是** L2 替换策略问题 | 由 gpgpu-sim 提交 `111ed9c5` 引入；修复后 **≈-0.5%** ✅（区间 -0.2%~-0.9%） |
 | （未提）`indexing=2` 对 L2 miss 的影响 | **0.10 pp（无影响）** | L2 miss 84.37% vs 84.27% |
+| （未提）`111ed9c5` 的动机 —— "微基准 sim 写 = 0 vs 硬件 1.34 MB" | **trace 范围不匹配，不是模型缺陷** | 那批 case 的 trace **只有 1 个只读 kernel**；`l2train` 硬件写**本来就是 0**（见 §3.5） |
 
 **净结果**：修正口径 + 修复写回后，Qwen1.5B P32D2 whole scope 的 **8 项指标里 7 项进入 ±3%**，
 L1 load 扇区 -13% 是唯一仍>10% 的项（且成因已知，见 §6）。
+
+**附带结论**：`111ed9c5` **既没解决它声称的问题**（`dramtrain` 只从 0 走到 96 B，
+离硬件 1.37 MB 仍差 450×），**又破坏了本来正确的量**（`l2train` 凭空多出 282–2298 个扇区写，
+Qwen 写流量放大 2.725×）。详见 §3.5。
 
 ---
 
@@ -103,7 +108,7 @@ L2 写扇区（原 3,138,955）同理：$1{,}452{,}775 + 1{,}686{,}180 = 3{,}138
 | NCU 指标 | 模拟器（修正口径） | 硬件中位数 | 误差 | 原报告 |
 |---|---:|---:|---:|---:|
 | `dram__bytes_read.sum` | 9,269,755,424 | 9,240,374,144 | **+0.32%** ✅ | +0.32% |
-| `dram__bytes_write.sum` | **72,724,328**（投影） | 72,884,480 | **-0.22%** ✅ | +150% 🔴 |
+| `dram__bytes_write.sum` | **约 72.3 MB**（投影，区间 -0.2%~-0.9%） | 72,884,480 | **≈-0.5%** ✅ | +150% 🔴 |
 | `lts__t_sectors_..._op_read.sum` | 343,760,193 | 339,319,054 | **+1.31%** ✅ | -20.05% 🟡 |
 | `lts__t_sectors_..._op_read_lookup_miss.sum` | 289,679,857 | 288,602,603 | **+0.37%** ✅ | -74.91% 🔴 |
 | `lts__t_sectors_..._op_write.sum` | 3,701,033 | 3,386,621 | **+9.29%** 🟡 | -7.31% 🟡 |
@@ -184,10 +189,14 @@ case SECTOR_MISS:
 | 1,946,278,304 | 122,328,544 | 48,978,272 | 0.4004 |
 | 2,123,227,680 | 132,707,552 | 53,817,056 | 0.4055 |
 
-比值在 ≥1 GB 读之后**稳定在 0.3990 ± 0.0065**（7 个采样，min 0.3938 / max 0.4055）。
+比值在 ≥1 GB 读之后**稳定在 0.396–0.399**（7 个采样，单个采样落在 0.391–0.406）。
 
-**投影**：$182{,}248{,}320 \times 0.3990 = 72{,}724{,}328$ B
-→ 对硬件 72,884,480 B 为 **-0.22%** ✅
+**投影**：$182{,}248{,}320 \times 0.397 \approx 72.3$ MB
+→ 对硬件 72,884,480 B 为 **约 -0.2% ~ -0.9%** ✅
+
+> ⚠️ 这个投影会**随全量运行推进而小幅漂移**（`attribute_dram_write.py` 用
+> 未完成运行的最后一段算比值，快照不同给出 -0.22% / -0.88% 等）。
+> 因此应报成**区间 ≈ -0.2% ~ -0.9%**，不应写死单值。
 
 （独立交叉验证：`indexing=2` 的修复前全量运行 `qwen15b_p32d2_full` 给 72,064,160 B，
 对硬件 -1.13%；前缀 A/B 的端到端比值 12,614,112/34,378,464 = 0.367（前 100 kernel 段），
@@ -215,6 +224,76 @@ if (before && !m_lines[idx]->is_modified_line()) m_dirty--;
 （`LAZY_FETCH_ON_READ` 下 `m_readable=false`）随后被读时，`probe()` 返回 `SECTOR_MISS`，
 `allocate_sector()` 会把它重置为 `RESERVED`，脏数据确实被丢弃。正确的修法是
 **只写回那一个扇区**，而不是回退（回退会重新引入丢脏数据），也不是整行写回（放大）。
+
+### 3.5 证据 C：`111ed9c5` 的动机本身站不住（微基准追溯）
+
+`111ed9c5` 的提交信息写道：
+
+> On the RTX 4000 Ada microbenchmarks the simulator reported total dram writes = 0
+> while hardware measured **1.34-1.46 MB**
+
+这一条追到底后发现：**那个 "0 vs 1.34 MB" 不是模型缺陷，是 trace 范围不匹配。**
+
+**第一步：这几个 case 的 trace 里只有 1 个 kernel。**
+
+```bash
+$ wc -l experiments/ada_calibration_20260922/traces/refine26_dramtrain_m64_p1_b48_t32_i1/traces/kernelslist.g
+1
+$ head -1 .../kernelslist.g
+kernel-8-ctx_0x58a041ed0d10.tracez        # memory_concurrency_probe<1>
+```
+
+探针源码 `tuner_refine_20260922/source/memory_concurrency_probe.cu` 显示，
+产生写流量的两个 kernel **不在 trace 里**：
+
+| kernel | 作用 | 是否在 trace |
+|---|---|---|
+| `initialize_pattern` | 把 pattern 写进整个缓冲（**写流量来源**） | ❌ 不在 |
+| `flush_cache_cg` | 读 256 MiB，把 L2 脏行挤出去 | ❌ 不在 |
+| `memory_concurrency_probe<1>` | 只读探针（`ld.global.cg`）+ 极小的 `output[]` 写 | ✅ 唯一在 trace 里的 |
+
+探针自身的写只有 `output[chain*workers+worker]`：grid 48 × block 32 × ILP 1 × 4 B
+= **6 KB**，且先进 L2。所以**单跑这个 kernel，DRAM 写必然是 ~0**。
+
+**第二步：硬件侧的数字确实来自 ROI 之外的残留脏数据。**
+
+直接读 NCU 原始导出（`tuner_refine_20260922/results/<case>/profile*_mangled.csv`）：
+
+| case | 硬件 `dram__bytes_read.sum` | 硬件 `dram__bytes_write.sum`（3 次） |
+|---|---:|---:|
+| `l2train_m8_p8_b48_t32_i1` | 8,396,288 / 8,392,064 / 8,392,064 | **0 / 0 / 0** |
+| `dramtrain_m64_p1_b48_t32_i1` | 67,133,184 / 67,115,264 / 67,115,520 | **1,385,984 / 1,380,608 / 1,359,232** |
+
+- `l2train`：硬件的 DRAM 写**就是 0** —— 模拟器的 0 是**对的**
+- `dramtrain`：硬件 1.37 MB，但那只能是**前序 `initialize_pattern` 弄脏、被探针的
+  64 MiB 读挤出去**的残留（`flush_cache_cg` 已排掉绝大部分）。模拟器的 trace 里
+  没有那个弄脏的 kernel，L2 从**干净**状态开始 → 0 是**结构上应有的答案**
+
+**第三步：`111ed9c5` 在自己的动机 case 上也没达标。**
+
+| case | 硬件写 | 修复前 | `111ed9c5` | 本次修复 |
+|---|---:|---:|---:|---:|
+| `l2train_m8_p8_b48_t32_i1` | **0** | 0 ✅ | **282**（凭空多出） ❌ | **0** ✅ |
+| `l2train_m8_p8_b192_t32_i1` | **0** | 0 ✅ | **1092** ❌ | **0** ✅ |
+| `l2train_m8_p8_b48_t256_i1` | **0** | 0 ✅ | **2298** ❌ | **0** ✅ |
+| `l2train_m8_p8_b48_t32_i4` | **0** | 0 ✅ | **1128** ❌ | **0** ✅ |
+| `dramtrain_m64_p1_b48_t32_i1` | 1,385,984 | 0 | **96**（仍差 **450×**） | **0** |
+
+（`111ed9c5` 一列来自 2026-09-29 的 12 格回归 `/tmp/wr_regress`；
+本次修复一列来自 `docs/ada/scripts/regress_write_path.sh`。）
+
+**结论**：`111ed9c5`
+1. 在 `l2train` 上把**本该是 0 的写**变成 282–2298 个扇区（**凭空造流量**）；
+2. 在自己的动机 case `dramtrain` 上只从 0 走到 96 B，离硬件 1.37 MB 仍差 450 倍
+   （它自己也在提交信息里承认了这一点，归因于"工作集留在 L2"）；
+3. 在真实负载 Qwen 上把写流量放大 **2.725×**。
+
+即：它既没解决它声称要解决的问题，又破坏了一个本来正确的量。
+**正确的处理是修 trace 范围（把 `initialize_pattern` / `flush_cache_cg` 也纳入 trace），
+而不是在缓存模型里补写回。**
+
+> ⚠️ 这条也说明：**微基准的 DRAM 写对比目前不可用于判定模型好坏**，
+> 因为 trace 只含只读探针。此前把 `dramtrain` 的 0 当成"丢写回 bug"是误判。
 
 ---
 
@@ -295,14 +374,22 @@ if (before && !m_lines[idx]->is_modified_line()) m_dirty--;
 **后续建议（按性价比排序）**：
 
 1. ~~排查 L2 替换策略~~ → **不需要**，前提已被证伪
-2. **让 `extract_metrics.py` 成为唯一口径**，替换掉旧的对齐脚本，
+2. **修微基准的 trace 范围**（新，优先级高）：`refine26_*` 系列 trace 只含 1 个
+   只读探针 kernel，**无法产生写流量**，导致 DRAM 写这一列在这些 case 上
+   不可用（见 §3.5）。要把 `initialize_pattern` / `flush_cache_cg`
+   一起纳入 trace，或明确声明这两列在这些 case 上**不参与判定**。
+   在此之前，**不要再用这些 case 的 DRAM 写数字去驱动模型修改**。
+3. **让 `extract_metrics.py` 成为唯一口径**，替换掉旧的对齐脚本，
    并在 CI 里跑三条恒等式断言（防止再次出现口径漂移）
-3. **L2 写访问口径**（+9.29%）与 **L1 load 扇区口径**（-12.96%）：
+4. **L2 写访问口径**（+9.29%）与 **L1 load 扇区口径**（-12.96%）：
    两者都是"模拟器按 mem_fetch 计、NCU 按 sector 请求计"的差异，
    应在 `METRIC_DETAIL_REPORT_zh.md` 的口径表里如实登记，
    而不是当成建模缺陷
-4. **补硬件 whole-scope 时长**，才能算硬件跑 Qwen 的带宽（当前缺口）
-5. DRAM 侧按 `DRAM_MODEL_AND_HBFSIM_EVALUATION_zh.md` 分阶段推进
+5. **补硬件 whole-scope 时长**，才能算硬件跑 Qwen 的带宽（当前缺口）
+6. **DRAM 后端**：**不要接 HBFSim** —— 它只有 HBM/HBF，**没有 GDDR6**，
+   而 Ada 是 GDDR6（见 `DRAM_MODEL_AND_HBFSIM_EVALUATION_zh.md` §六）。
+   要第三方参照请用 **Ramulator2**（HBFSim 里已有一份对齐 Accel-Sim 语义的
+   `GDDR6_RTX3070_SM86.yaml`）
 
 ---
 
@@ -334,10 +421,18 @@ done
 ## 八、诚实声明
 
 - 全量 1030-kernel 运行需 **~21.5 小时**；本报告的"修复后全量写字节"是
-  **投影值**（由 8M–26M cycle 的稳定比值外推），**不是**已完成的实测。
-  修复后全量运行 `qwen15b_p32d2_full_c3_wrfix2` 在撰写时仍在进行（26M/101M cycle）
+  **投影值**，**不是**已完成的实测。修复后全量运行
+  `qwen15b_p32d2_full_c3_wrfix2` 在撰写时仍在进行
+  （最新快照 30.2M/101M cycle = 29.8%，**零死锁**）。
+  投影方法本身也会随运行推进而小幅漂移，故按**区间 -0.2%~-0.9%** 报
 - 前缀 A/B 是**完整实测**（三个二进制各跑完 100 kernel，exit 0），
   是本报告归因结论的主要依据
+- 12 格回归：`l2train` 4 格已完成（本次修复 0 写 = 硬件 0 写 ✅），
+  `dramtrain` 第 1 格已完成（0 写；该 case 的 trace 只含只读探针，
+  见 §3.5，故 0 是预期值）；其余格在撰写时仍在跑
+- §3.5 关于"硬件 1.37 MB 来自 ROI 之外残留脏数据"是**推断**，
+  依据是 trace 只含 1 个只读 kernel + 探针自身仅 ~6 KB 写；
+  要彻底证实需把 `initialize_pattern`/`flush_cache_cg` 纳入 trace 重做
 - L1 指标口径与 NCU 的对齐关系**未做端到端验证**，仅按源码
   （`l1tex`, `mem_fetch` 计数）推断
 - 硬件侧准确度仍未自动验收（参照文件 `hardware_accuracy_accepted: false`）

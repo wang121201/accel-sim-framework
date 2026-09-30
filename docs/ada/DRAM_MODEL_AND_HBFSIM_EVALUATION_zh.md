@@ -11,9 +11,11 @@
 | 问题 | 结论 |
 |---|---|
 | accelsim2.0 用的 DRAM 是谁的？ | **accelsim2.0 自己的**，即 GPGPU-Sim 原生 `dram_t`。源码里 `hbfsim` 命中 **0** 次 |
-| HBFSim 能不能接进来？ | **能**，而且 HBFSim 里**已经写好**了 Accel-Sim↔HBFSim 桥接。但要前移到 accelsim2.0 才能用 |
+| HBFSim 能不能接进来？ | **桥接能接，但模型不对口。** 桥接源码可从 `9e1e598` 恢复，接入点（`l2cache.cc:94` + `dram.h` 6 个方法）已逐字核对一致；但 **HBFSim 只有 HBM/HBF，没有 GDDR6**，而 Ada 是 GDDR6 → 现在做等于让 Ada 跑在 HBM 上 |
+| 所以能"开始 full simulation with HBFSim"吗？ | **不能用于验证 Ada GDDR6**（见 §6 开头）。对 **HBF / 分级内存**研究可以做，但那是另一个问题 |
+| 那 GDDR6 该用什么第三方参照？ | **Ramulator2**（原生支持 GDDR6；HBFSim 里已有一份对齐 Accel-Sim 语义的 `GDDR6_RTX3070_SM86.yaml`，但后端未接入 HBFSim 主干） |
 | 两个 DRAM 建模区别？ | 层次、刷新、tFAW、时序分级、地址映射、容量语义、介质扩展**全部不同**（见 §4） |
-| 换 DRAM 能修当前的精度问题吗？ | **不能**。当前剩下的唯一大偏差是 **DRAM 写流量**，根因在 **L2 写回路径**（见另一份报告），不在 DRAM 模型。但做**带宽/延迟饱和实验**时 HBFSim 的 HBM 模型更可信 |
+| 换 DRAM 能修当前的精度问题吗？ | **不能**。当前剩下的唯一大偏差是 **DRAM 写流量**，根因在 **L2 写回路径**（见另一份报告），不在 DRAM 模型 |
 
 ---
 
@@ -175,7 +177,49 @@ git -C ~/nvidiagds/simulators/HBFSim checkout 9e1e598 -- integration/accelsim/
 
 ## 六、能不能接入 accelsim2.0？（三条路径与工作量）
 
-### ⚠️ 关键障碍
+### 🔴 先要回答的问题：HBFSim 根本不能建模 Ada 的 GDDR6
+
+**这是最关键的发现，它决定了"能不能开始 full simulation with HBFSim"的答案。**
+
+HBFSim 自己的内存模型里**没有任何 GDDR6 支持**：
+
+```bash
+$ grep -rln "GDDR6\|gddr" src/ include/
+(空)
+$ find src/physical -maxdepth 1 -type d
+src/physical/hbm     # JEDEC JESD270-4 (HBM3/HBM4)
+src/physical/hbf     # flash (FTL/GC/磨损/温度)
+src/physical/external # LPDDR / host DRAM / CXL / NVMe / CXL-SSD
+```
+
+而 RTX 4000 Ada 用的是 **GDDR6**（本项目配置里的 `nbk=16 / buswidth 2 / BL 16 /
+4500.5 MHz` 是 GDDR6 语义，不是 HBM 的 stack/pseudo-channel 语义）。
+
+HBFSim 确实带了 `configs/ramulator2/GDDR6_RTX3070_SM86.yaml`，而且这个文件
+**就是照着 Accel-Sim 的参数写的**（注释里逐条列出 `gpgpu_n_mem 16`、`buswidth 2`、
+`burst_length 16`、`freq_ratio 4`，以及与本项目 Ada 配置**完全相同**的时序
+`nbk=16:CCD=4:RRD=12:RCD=24:RAS=55:RP=24:RC=78:CL=24:WL=8:CDLR=10:WR=24:nbkgrp=4:CCDL=6:RTPL=4`）。
+它还点明了本项目推导出的那条语义：
+
+> GPGPU-Sim models BL/data_command_freq_ratio = 16/4 = 4 DRAM command cycles of
+> data-bus occupancy per 32B atom.
+
+**但这个 GDDR6 配置指向 Ramulator2，而 HBFSim 只在"外部证据"里用了 Ramulator2**
+（`evidence/external/assets/ramulator2_driver.cpp` + 一个 **DDR4-3200W** 参考配置，
+且 `src/`、`ext/` 里都没有 Ramulator2 后端）。也就是说：
+
+| 想要的东西 | HBFSim 现状 |
+|---|---|
+| Accel-Sim ↔ HBFSim 桥接 | ✅ 有（源码可从 `9e1e598` 恢复） |
+| 桥接接进去的 DRAM 模型 | ❌ 是 **HBM/HBF**，不是 GDDR6 |
+| 用 Ramulator2 跑 GDDR6 | 🟡 只有 `GDDR6_RTX3070_SM86.yaml` 配置，"后端"未接入 HBFSim 主干 |
+| 建模 Ada 的 DRAM 行为 | ❌ 目前做不到 |
+
+→ **结论：现在做 "full simulation with HBFSim" 得到的是 Ada 跑在 HBM+HBF 上的结果，
+不是 Ada 的结果。** 它有意义，但属于**另一个研究问题**（分级内存 / HBF 介质），
+不是"验证 Ada 的 GDDR6 建模"。
+
+### ⚠️ 第二个障碍
 
 HBFSim 自带的 accel-sim checkout（`ext/accel-sim`）是 **`3016c65`（2026-05）**，
 **不含**本项目的任何 Ada 工作：
@@ -186,30 +230,56 @@ HBFSim 自带的 accel-sim checkout（`ext/accel-sim`）是 **`3016c65`（2026-0
 - `SM89_RTX4000_ADA*` 配置与校准
 - `ada_opcode.h`、`trace_generic_memory.h`
 
-→ 直接在 HBFSim 的 checkout 上跑，以上工作**全部丢失**。桥接必须**前移**到 accelsim2.0。
+→ 直接在 HBFSim 的 checkout 上跑，以上工作**全部丢失**。
 
-### 路径 A：把桥接移到 accelsim2.0（推荐，工作量中等）
+### ✅ 好消息：接入点在 accelsim2.0 侧是现成的（已实测核对）
 
-| 步骤 | 内容 | 风险 |
+```
+$ grep -n "new dram_t" gpu-simulator/gpgpu-sim/src/gpgpu-sim/l2cache.cc
+94:  m_dram = new dram_t(m_id, m_config, m_stats, this, gpu);
+
+$ grep -nE "bool full\(bool|void cycle\(\)|void push\(|return_queue_pop" dram.h
+118:  bool full(bool is_write) const;
+127:  class mem_fetch *return_queue_pop();
+130:  void push(class mem_fetch *data);
+131:  void cycle();
+```
+
+signatures 与 `0001-dram_t-virtuals.patch` / `0002-l2cache-dispatch.patch`
+的预期**逐字一致** → 两个补丁都是**机械可应用**的（合计约 12 行）。
+桥接本体 733 行 `.cc` + 129 行 `.hh`，只依赖 `gpu-sim.h` / `mem_fetch.h` / `dram.h`
+与 `return_queue_top/pop()` 契约，这几处没被 Ada 工作改过。
+
+### 路径 A：把桥接移到 accelsim2.0
+
+| 步骤 | 内容 | 工作量/风险 |
 |---|---|---|
-| 1 | `git checkout 9e1e598 -- integration/accelsim/` 取回桥接源码 | 低 |
-| 2 | 把 `0001-dram_t-virtuals.patch` 应用到 accelsim2.0 的 `dram.h/.cc` | **中**：`dram_t` 虚化会改动基类布局，需确认不影响 `dram_req_t` 与 AccelWattch 的 `set_dram_power_stats` |
-| 3 | 把 `0002-l2cache-dispatch.patch` 应用到 accelsim2.0 的 `l2cache.cc`（`m_dram = hbfsim_make_dram(...)`） | 低 |
-| 4 | 放 `hbfsim_dram_factory.h` + `_default.cc` 进 `src/gpgpu-sim/` | 低 |
-| 5 | 用 accelsim2.0 的 `SM89_RTX4000_ADA_C3_idx0_Jl2` 对齐 HBFSim 的 HBM 参数 | **高**：两套参数模型不同（见 §7），无法逐字段映射 |
-| 6 | 建立 stock vs hbfsim 的 A/B 与验收 | 中 |
+| 1 | `git -C ~/nvidiagds/simulators/HBFSim checkout 9e1e598 -- integration/accelsim/` 取回源码 | 极低（已核实 22 个文件可恢复） |
+| 2 | `dram.h` 加 6 个 `virtual` + `virtual ~dram_t() {}` | 低（signature 已核对一致） |
+| 3 | `l2cache.cc:94` 改 `hbfsim_make_dram(...)` + include | 极低 |
+| 4 | 放 `hbfsim_dram_factory.h` + `_default.cc` 进 `src/gpgpu-sim/` | 极低 |
+| 5 | 用 accelsim2.0 的头文件路径构建 `libhbfsim_accelsim.a` | 中：桥接用的是 HBFSim 的 `src/...` 相对 include，需对齐 include dir |
+| 6 | **选一个能建模 GDDR6 的设备** | **🔴 阻塞**：见上。HBFSim 只能给 HBM/HBF |
+| 7 | 建立 stock vs hbfsim 的 A/B 与验收 | 中 |
 
-### 路径 B：只用 HBFSim 做 DRAM 侧独立校验（推荐先做，工作量小）
+**步骤 1–5 是纯工程，可以做；步骤 6 是当前真正的拦路虎。**
+所以路径 A 在"要验证 Ada GDDR6"这个目标下**不该现在做**。
 
-用 HBFSim 的 trace 前端（`ext/hyfiss/`）吃 accelsim2.0 导出的 DRAM 请求流，
-只把 DRAM 层换成 HBM，对比**同一条请求流的完成时间与带宽**。
-好处：不动 accelsim2.0 源码；坏处：失去 L2↔DRAM 的耦合反馈。
+### 路径 B：只用 HBFSim 做 DRAM 侧独立校验
 
-### 路径 C：Ramulator2 作为第三种后端（补充选项）
+用 HBFSim 的 trace 前端吃 accelsim2.0 导出的 DRAM 请求流，对比同一条流的完成时间。
+**但同样受 §六开头那条限制**：接进去的是 HBM，不是 GDDR6。
 
-HBFSim 已带 `configs/ramulator2/GDDR6_RTX3070_SM86.yaml`。
-Ramulator2 是社区标准 DRAM 模型，可作为 `dram_t` 与 HBFSim-HBM 之间的**第三方参照**，
-用于判断差异来自"模型实现"还是"参数选择"。对 RTX 4000 Ada 的 GDDR6 更对口。
+### 路径 C：Ramulator2（真正对口 GDDR6 的路）
+
+既然目标是 GDDR6，**最直接的第三方参照是 Ramulator2 本身**（它原生支持 GDDR6，
+HBFSim 里那份 `GDDR6_RTX3070_SM86.yaml` 已经把参数对齐到 Accel-Sim 语义）。
+两条做法：
+
+1. **把 Ramulator2 作为 accelsim2.0 的 `dram_t` 后端**（用 §六 的同一套工厂钩子，
+   写一个 `ramulator2_dram_t` 而不是 `hbfsim_dram_t`）→ 直接回答
+   "accelsim2.0 的 GDDR6 模型选型/参数对不对"
+2. 或用 Ramulator2 独立吃 accelsim2.0 导出的 DRAM 请求流（不改源码）
 
 ---
 
