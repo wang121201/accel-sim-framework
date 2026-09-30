@@ -410,23 +410,62 @@ docs/ada/evidence/fixtures/golden_metrics.json
   `FAIL ... expected 72,420,357 got 289,679,857`，**exit 1**
 - `check_l2_write_zero.py` 在 `111ed9c5` 基线上 **6/6 FAIL**，在本次修复上 **6/6 PASS**
 
-**接到任何 harness**（三种都可用，不需要改构建系统）：
+**接入方式**：
 
-```bash
-# 1) make：包一层，避免 gpu-simulator/Makefile 末行 include 强制 checkenv
-ci-checks:
-	./docs/ada/scripts/run_ci_checks.sh
+**1）GitHub Actions（已落地）** —— `.github/workflows/ada-accuracy.yml`
 
-# 2) ctest
-add_test(NAME ada_accuracy COMMAND ${CMAKE_SOURCE_DIR}/docs/ada/scripts/run_ci_checks.sh)
-
-# 3) GitHub Actions / pre-commit
-- run: ./docs/ada/scripts/run_ci_checks.sh
+```yaml
+jobs:
+  accuracy-checks:
+    runs-on: ubuntu-latest      # 不是 tgrogers-*（那是上游的自托管 GPU runner）
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v5
+        with: { python-version: '3.10' }
+      - run: ./docs/ada/scripts/run_ci_checks.sh
 ```
 
-> 未改 `gpu-simulator/Makefile`：它末行的 `include $(BUILD_DIR)/main.makedepend`
-> 会在任何 target 上强制走 `checkenv`（需 `source setup_environment.sh`），
-> 与"CI 不该依赖构建环境"冲突。改 `-include` 属于构建语义变更，留给后续决定。
+触发：`push` / `pull_request` 且改动落在 `docs/ada/**`（或该 workflow 本身）+ 手动 `workflow_dispatch`。
+
+**在干净克隆里实测过**（这是 runner 会看到的样子）：
+
+```
+$ git clone --depth 1 --branch ada-sm89-support file://$PWD /tmp/ci_sim
+experiments present? NO
+build present? NO
+== 5 passed, 0 failed ==      0.4 s
+```
+
+**非绿时也确实会红**（在同一个干净克隆里复现原报告的口径错误）：
+
+```
+== 4 passed, 1 failed ==
+failed: qwen_p32d2_full_c3_wrfix.final_rows.csv.gz golden values
+EXIT=1
+```
+
+> `paths:` 过滤是刻意的：只改模拟器源码的 push 不该占用 runner 去跑
+> **看不到源码** 的检查（这些检查是夹具驱动的）。想让每次 push 都跑就删掉
+> `paths:` 块 —— 代价是 runner 启动，不是检查本身。
+
+**2）make（未落地，需要你决定）**
+
+```make
+ci-checks:
+	./docs/ada/scripts/run_ci_checks.sh
+```
+
+未直接加进 `gpu-simulator/Makefile`：它末行的
+`include $(BUILD_DIR)/main.makedepend` 会在**任何 target** 上触发 `checkenv`
+（要求先 `source setup_environment.sh`），与"CI 不该依赖构建环境"冲突。
+要让这个 target 真正可用，需要把该 `include` 改成 `-include` —— 属构建语义变更。
+
+**3）ctest**
+
+```cmake
+add_test(NAME ada_accuracy COMMAND ${CMAKE_SOURCE_DIR}/docs/ada/scripts/run_ci_checks.sh)
+```
 
 
 ---
