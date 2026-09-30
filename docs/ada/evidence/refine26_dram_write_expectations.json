@@ -1,0 +1,247 @@
+{
+  "schema": "REFINE26_DRAM_WRITE_EXPECTATIONS_V1",
+  "why": "The probe traces contain only the ROI kernel, so DRAM writes are judgeable only where hardware is exactly 0. See the module docstring in check_l2_write_zero.py.",
+  "source": "NCU profile exports, tuner_refine_20260922/results/<case>/profile*_mangled.csv",
+  "cases": {
+    "dramhold_m96_p1_b192_t256_i4": {
+      "group": "not_comparable",
+      "hardware_write_bytes": [
+        1343744,
+        1499008,
+        1461504
+      ],
+      "hardware_read_bytes": [
+        100671104,
+        100670720,
+        100670720
+      ],
+      "hardware_write_exactly_zero": false,
+      "judgeable": false,
+      "evidence": [
+        "experiments/ada_calibration_20260922/tuner_refine_20260922/results/dramhold_m96_p1_b192_t256_i4/profile_mangled.csv",
+        "experiments/ada_calibration_20260922/tuner_refine_20260922/results/dramhold_m96_p1_b192_t256_i4/profile_r2_mangled.csv",
+        "experiments/ada_calibration_20260922/tuner_refine_20260922/results/dramhold_m96_p1_b192_t256_i4/profile_r3_mangled.csv"
+      ]
+    },
+    "dramhold_m96_p1_b96_t128_i1": {
+      "group": "not_comparable",
+      "hardware_write_bytes": [
+        1356160,
+        1355904,
+        1396096
+      ],
+      "hardware_read_bytes": [
+        100670080,
+        100670208,
+        100670080
+      ],
+      "hardware_write_exactly_zero": false,
+      "judgeable": false,
+      "evidence": [
+        "experiments/ada_calibration_20260922/tuner_refine_20260922/results/dramhold_m96_p1_b96_t128_i1/profile_mangled.csv",
+        "experiments/ada_calibration_20260922/tuner_refine_20260922/results/dramhold_m96_p1_b96_t128_i1/profile_r2_mangled.csv",
+        "experiments/ada_calibration_20260922/tuner_refine_20260922/results/dramhold_m96_p1_b96_t128_i1/profile_r3_mangled.csv"
+      ]
+    },
+    "dramtrain_m64_p1_b192_t32_i1": {
+      "group": "not_comparable",
+      "hardware_write_bytes": [
+        1448576,
+        1451008,
+        1342976
+      ],
+      "hardware_read_bytes": [
+        67115136,
+        67115264,
+        67115520
+      ],
+      "hardware_write_exactly_zero": false,
+      "judgeable": false,
+      "evidence": [
+        "experiments/ada_calibration_20260922/tuner_refine_20260922/results/dramtrain_m64_p1_b192_t32_i1/profile_mangled.csv",
+        "experiments/ada_calibration_20260922/tuner_refine_20260922/results/dramtrain_m64_p1_b192_t32_i1/profile_r2_mangled.csv",
+        "experiments/ada_calibration_20260922/tuner_refine_20260922/results/dramtrain_m64_p1_b192_t32_i1/profile_r3_mangled.csv"
+      ]
+    },
+    "dramtrain_m64_p1_b48_t256_i1": {
+      "group": "not_comparable",
+      "hardware_write_bytes": [
+        1459584,
+        1403264,
+        1500288
+      ],
+      "hardware_read_bytes": [
+        67115264,
+        67115648,
+        67115520
+      ],
+      "hardware_write_exactly_zero": false,
+      "judgeable": false,
+      "evidence": [
+        "experiments/ada_calibration_20260922/tuner_refine_20260922/results/dramtrain_m64_p1_b48_t256_i1/profile_mangled.csv",
+        "experiments/ada_calibration_20260922/tuner_refine_20260922/results/dramtrain_m64_p1_b48_t256_i1/profile_r2_mangled.csv",
+        "experiments/ada_calibration_20260922/tuner_refine_20260922/results/dramtrain_m64_p1_b48_t256_i1/profile_r3_mangled.csv"
+      ]
+    },
+    "dramtrain_m64_p1_b48_t32_i1": {
+      "group": "not_comparable",
+      "hardware_write_bytes": [
+        1385984,
+        1380608,
+        1359232
+      ],
+      "hardware_read_bytes": [
+        67133184,
+        67115264,
+        67115520
+      ],
+      "hardware_write_exactly_zero": false,
+      "judgeable": false,
+      "evidence": [
+        "experiments/ada_calibration_20260922/tuner_refine_20260922/results/dramtrain_m64_p1_b48_t32_i1/profile_mangled.csv",
+        "experiments/ada_calibration_20260922/tuner_refine_20260922/results/dramtrain_m64_p1_b48_t32_i1/profile_r2_mangled.csv",
+        "experiments/ada_calibration_20260922/tuner_refine_20260922/results/dramtrain_m64_p1_b48_t32_i1/profile_r3_mangled.csv"
+      ]
+    },
+    "dramtrain_m64_p1_b48_t32_i4": {
+      "group": "not_comparable",
+      "hardware_write_bytes": [
+        1336448,
+        1455744,
+        1371392
+      ],
+      "hardware_read_bytes": [
+        67116800,
+        67120256,
+        67116288
+      ],
+      "hardware_write_exactly_zero": false,
+      "judgeable": false,
+      "evidence": [
+        "experiments/ada_calibration_20260922/tuner_refine_20260922/results/dramtrain_m64_p1_b48_t32_i4/profile_mangled.csv",
+        "experiments/ada_calibration_20260922/tuner_refine_20260922/results/dramtrain_m64_p1_b48_t32_i4/profile_r2_mangled.csv",
+        "experiments/ada_calibration_20260922/tuner_refine_20260922/results/dramtrain_m64_p1_b48_t32_i4/profile_r3_mangled.csv"
+      ]
+    },
+    "l2hold_m16_p4_b192_t256_i4": {
+      "group": "comparable",
+      "hardware_write_bytes": [
+        0,
+        0,
+        0
+      ],
+      "hardware_read_bytes": [
+        16781440,
+        16781568,
+        16781568
+      ],
+      "hardware_write_exactly_zero": true,
+      "judgeable": true,
+      "evidence": [
+        "experiments/ada_calibration_20260922/tuner_refine_20260922/results/l2hold_m16_p4_b192_t256_i4/profile_mangled.csv",
+        "experiments/ada_calibration_20260922/tuner_refine_20260922/results/l2hold_m16_p4_b192_t256_i4/profile_r2_mangled.csv",
+        "experiments/ada_calibration_20260922/tuner_refine_20260922/results/l2hold_m16_p4_b192_t256_i4/profile_r3_mangled.csv"
+      ]
+    },
+    "l2hold_m16_p4_b96_t128_i1": {
+      "group": "comparable",
+      "hardware_write_bytes": [
+        0,
+        0,
+        0
+      ],
+      "hardware_read_bytes": [
+        16780672,
+        16780672,
+        16780672
+      ],
+      "hardware_write_exactly_zero": true,
+      "judgeable": true,
+      "evidence": [
+        "experiments/ada_calibration_20260922/tuner_refine_20260922/results/l2hold_m16_p4_b96_t128_i1/profile_mangled.csv",
+        "experiments/ada_calibration_20260922/tuner_refine_20260922/results/l2hold_m16_p4_b96_t128_i1/profile_r2_mangled.csv",
+        "experiments/ada_calibration_20260922/tuner_refine_20260922/results/l2hold_m16_p4_b96_t128_i1/profile_r3_mangled.csv"
+      ]
+    },
+    "l2train_m8_p8_b192_t32_i1": {
+      "group": "comparable",
+      "hardware_write_bytes": [
+        0,
+        0,
+        0
+      ],
+      "hardware_read_bytes": [
+        8392320,
+        8392064,
+        8392064
+      ],
+      "hardware_write_exactly_zero": true,
+      "judgeable": true,
+      "evidence": [
+        "experiments/ada_calibration_20260922/tuner_refine_20260922/results/l2train_m8_p8_b192_t32_i1/profile_mangled.csv",
+        "experiments/ada_calibration_20260922/tuner_refine_20260922/results/l2train_m8_p8_b192_t32_i1/profile_r2_mangled.csv",
+        "experiments/ada_calibration_20260922/tuner_refine_20260922/results/l2train_m8_p8_b192_t32_i1/profile_r3_mangled.csv"
+      ]
+    },
+    "l2train_m8_p8_b48_t256_i1": {
+      "group": "comparable",
+      "hardware_write_bytes": [
+        0,
+        0,
+        0
+      ],
+      "hardware_read_bytes": [
+        8392064,
+        8392064,
+        8392064
+      ],
+      "hardware_write_exactly_zero": true,
+      "judgeable": true,
+      "evidence": [
+        "experiments/ada_calibration_20260922/tuner_refine_20260922/results/l2train_m8_p8_b48_t256_i1/profile_mangled.csv",
+        "experiments/ada_calibration_20260922/tuner_refine_20260922/results/l2train_m8_p8_b48_t256_i1/profile_r2_mangled.csv",
+        "experiments/ada_calibration_20260922/tuner_refine_20260922/results/l2train_m8_p8_b48_t256_i1/profile_r3_mangled.csv"
+      ]
+    },
+    "l2train_m8_p8_b48_t32_i1": {
+      "group": "comparable",
+      "hardware_write_bytes": [
+        0,
+        0,
+        0
+      ],
+      "hardware_read_bytes": [
+        8396288,
+        8392064,
+        8392064
+      ],
+      "hardware_write_exactly_zero": true,
+      "judgeable": true,
+      "evidence": [
+        "experiments/ada_calibration_20260922/tuner_refine_20260922/results/l2train_m8_p8_b48_t32_i1/profile_mangled.csv",
+        "experiments/ada_calibration_20260922/tuner_refine_20260922/results/l2train_m8_p8_b48_t32_i1/profile_r2_mangled.csv",
+        "experiments/ada_calibration_20260922/tuner_refine_20260922/results/l2train_m8_p8_b48_t32_i1/profile_r3_mangled.csv"
+      ]
+    },
+    "l2train_m8_p8_b48_t32_i4": {
+      "group": "comparable",
+      "hardware_write_bytes": [
+        0,
+        0,
+        0
+      ],
+      "hardware_read_bytes": [
+        8392832,
+        8392960,
+        8392832
+      ],
+      "hardware_write_exactly_zero": true,
+      "judgeable": true,
+      "evidence": [
+        "experiments/ada_calibration_20260922/tuner_refine_20260922/results/l2train_m8_p8_b48_t32_i4/profile_mangled.csv",
+        "experiments/ada_calibration_20260922/tuner_refine_20260922/results/l2train_m8_p8_b48_t32_i4/profile_r2_mangled.csv",
+        "experiments/ada_calibration_20260922/tuner_refine_20260922/results/l2train_m8_p8_b48_t32_i4/profile_r3_mangled.csv"
+      ]
+    }
+  }
+}

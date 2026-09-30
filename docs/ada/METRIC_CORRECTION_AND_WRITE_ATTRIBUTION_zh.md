@@ -295,6 +295,89 @@ kernel-8-ctx_0x58a041ed0d10.tracez        # memory_concurrency_probe<1>
 > ⚠️ 这条也说明：**微基准的 DRAM 写对比目前不可用于判定模型好坏**，
 > 因为 trace 只含只读探针。此前把 `dramtrain` 的 0 当成"丢写回 bug"是误判。
 
+### 3.6 修复方案：不是重截 trace，而是按"可比性"拆分这 12 格
+
+#### 为什么不能重截 trace 来修
+
+ROI 只含探针 kernel 是**探针源码强制的**，不是截取时的疏忽：
+
+```cpp
+// tuner_refine_20260922/source/memory_concurrency_probe.cu, Nvbit()
+const std::string injection = environment("CUDA_INJECTION64_PATH");
+if (injection.empty() || std::getenv("DYNAMIC_KERNEL_RANGE"))
+  throw std::runtime_error("trace requires CUDA_INJECTION64_PATH and no DYNAMIC_KERNEL_RANGE");
+```
+
+即**显式拒绝**用 `DYNAMIC_KERNEL_RANGE` 放宽窗口；ROI 靠
+`ProfileScope roi(nvbit, mode != "events", tag)` → `nvbit.begin(tag)/nvbit.end()`
+（NVBit 的 start/stop API）圈定。探针自己还在报告里声明了
+`flush_and_validation_outside_roi = true`。tracer 的 `stats_ctx_*` 也证明它
+**看到了全部 8 个 kernel**（`initialize_pattern`×2、`flush_cache_cg`×3、探针×3），
+只是按 ROI 只给第 8 个落了盘：
+
+```
+kernel-3  flush_cache_cg              total_reported_insts = 0,0
+kernel-8  memory_concurrency_probe<1> total_reported_insts = 1443280,1443280
+```
+
+**而且重截的代价不可接受**。按探针几何量算全序列的内存指令数：
+
+| kernel | 次数 | 内存指令 |
+|---|---:|---:|
+| `initialize_pattern`（64 MiB + 256 MiB 写） | 2 | ~84 M stores |
+| `flush_cache_cg`（每次读 256 MiB） | 3 | ~50 M loads |
+| `memory_concurrency_probe` | 3 | ~4 M |
+| **合计** | | **~138 M** |
+
+按现有 trace 的 ~67 B/指令估，全序列 trace ≈ **9 GB**；
+对照 Qwen（9.27 GB DRAM 流量、1030 kernel）耗时 **21.5 h**，
+单格全序列模拟约 **10–25 h**，而且每格要跑两次（含/不含探针）才能差分出
+探针的写 —— 12 格 ≈ **数周机时**。**不划算。**
+
+#### 实际做法：按硬件是否恰为 0 拆分
+
+把 12 格的硬件写值取全（`profile*_mangled.csv`，各 3 次重复）：
+
+| 组 | 硬件 `dram__bytes_write.sum` | 单 kernel trace 能不能复现 |
+|---|---|---|
+| `l2train_*`（4）、`l2hold_*`（2） | **0 / 0 / 0** | ✅ **能**（读-only 探针 + 干净 L2 ⇒ 必须 0） |
+| `dramtrain_*`（4）、`dramhold_*`（2） | ~1.34–1.50 MB | ❌ 不能（需 ROI 之前的脏状态） |
+
+于是：
+
+- **`l2*` 6 格 → 写列有效且是"零断言"**：硬件 0，模拟器必须也是 0。
+  这是**能抓住 `111ed9c5` 那一类 bug 的最锐利测试** —— 这里模拟器只要写出
+  一个字节就**可证伪**。
+- **`dram*` 6 格 → 写列标记为不可比**（附原因），不再当误差用。
+
+#### 已落地的检查器
+
+`docs/ada/scripts/check_l2_write_zero.py`（三种模式 + 自检）：
+
+```bash
+# 从 NCU 导出冻结硬件期望（含分组守卫：分组与硬件零/非零必须自洽）
+python3 docs/ada/scripts/check_l2_write_zero.py --freeze
+
+# 快照一次回归的模拟侧结果
+python3 docs/ada/scripts/check_l2_write_zero.py --summarize /tmp/wr_regress_wbfix \
+        --out docs/ada/evidence/refine26_summary_wbfix.json
+
+# 判定（12 格中 6 格参与，6 格 excluded）
+python3 docs/ada/scripts/check_l2_write_zero.py --judge /tmp/wr_regress_wbfix
+
+# 自检：断言判定器能把两个二进制区分开（<1 s，不需 GPU）
+python3 docs/ada/scripts/check_l2_write_zero.py --selftest
+```
+
+实测区分度：
+
+| 回归 | `l2*` 6 格的模拟写 | 判定 |
+|---|---|---|
+| `/tmp/wr_regress`（`111ed9c5`） | 282 / 1092 / 2298 / 1128 / 2292 / 34313 | **6/6 FAIL**，exit 1 |
+| `/tmp/wr_regress_wbfix`（本次修复） | 0 / 0 / 0 / 0 / 0 / 0 | **6/6 PASS**，exit 0 |
+
+> 这个检查器**如果当时就存在，`111ed9c5` 会在提交前被拦住**。
+
 ---
 
 ## 四、任务 3：`indexing=2` 下的 L2 miss 率
@@ -374,13 +457,14 @@ kernel-8-ctx_0x58a041ed0d10.tracez        # memory_concurrency_probe<1>
 **后续建议（按性价比排序）**：
 
 1. ~~排查 L2 替换策略~~ → **不需要**，前提已被证伪
-2. **修微基准的 trace 范围**（新，优先级高）：`refine26_*` 系列 trace 只含 1 个
-   只读探针 kernel，**无法产生写流量**，导致 DRAM 写这一列在这些 case 上
-   不可用（见 §3.5）。要把 `initialize_pattern` / `flush_cache_cg`
-   一起纳入 trace，或明确声明这两列在这些 case 上**不参与判定**。
-   在此之前，**不要再用这些 case 的 DRAM 写数字去驱动模型修改**。
+2. ~~修微基准的 trace 范围~~ → **已用另一种方式解决**（见 §3.6）：
+   重截全序列实测不可行（~138 M 内存指令、~9 GB trace、每格 10–25 h）；
+   改为**按"硬件是否恰为 0"拆分 12 格** —— `l2*` 6 格写列有效且是零断言
+   （`docs/ada/scripts/check_l2_write_zero.py`，已能拦住 `111ed9c5`），
+   `dram*` 6 格写列标记不可比
 3. **让 `extract_metrics.py` 成为唯一口径**，替换掉旧的对齐脚本，
-   并在 CI 里跑三条恒等式断言（防止再次出现口径漂移）
+   并在 CI 里跑三条恒等式断言（防止再次出现口径漂移），
+   外加 `check_l2_write_zero.py --selftest`（<1 s，不需 GPU）
 4. **L2 写访问口径**（+9.29%）与 **L1 load 扇区口径**（-12.96%）：
    两者都是"模拟器按 mem_fetch 计、NCU 按 sector 请求计"的差异，
    应在 `METRIC_DETAIL_REPORT_zh.md` 的口径表里如实登记，
@@ -405,6 +489,10 @@ python3 docs/ada/scripts/extract_metrics.py \
 # 写回归因（前缀 A/B + 全量逐进度对照 + 投影）
 python3 docs/ada/scripts/attribute_dram_write.py \
   --json docs/ada/evidence/dram_write_attribution_20260930.json
+
+# 12 格微基准的 DRAM 写判定（6 格参与、6 格 excluded）+ 自检
+python3 docs/ada/scripts/check_l2_write_zero.py --selftest
+python3 docs/ada/scripts/check_l2_write_zero.py --judge /tmp/wr_regress_wbfix
 
 # 重建三个二进制并复跑前缀 A/B
 #   1. nofix  : git show 111ed9c5^:src/gpgpu-sim/gpu-cache.cc

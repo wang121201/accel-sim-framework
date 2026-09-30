@@ -1,0 +1,52 @@
+{
+  "cases": {
+    "dramhold_m96_p1_b192_t256_i4": {
+      "read_bytes": 3145728,
+      "write_bytes": 36624
+    },
+    "dramhold_m96_p1_b96_t128_i1": {
+      "read_bytes": 3145728,
+      "write_bytes": 2298
+    },
+    "dramtrain_m64_p1_b192_t32_i1": {
+      "read_bytes": 2097152,
+      "write_bytes": 555
+    },
+    "dramtrain_m64_p1_b48_t256_i1": {
+      "read_bytes": 2097152,
+      "write_bytes": 2298
+    },
+    "dramtrain_m64_p1_b48_t32_i1": {
+      "read_bytes": 2097152,
+      "write_bytes": 96
+    },
+    "dramtrain_m64_p1_b48_t32_i4": {
+      "read_bytes": 2097152,
+      "write_bytes": 687
+    },
+    "l2hold_m16_p4_b192_t256_i4": {
+      "read_bytes": 524288,
+      "write_bytes": 34313
+    },
+    "l2hold_m16_p4_b96_t128_i1": {
+      "read_bytes": 524288,
+      "write_bytes": 2292
+    },
+    "l2train_m8_p8_b192_t32_i1": {
+      "read_bytes": 262144,
+      "write_bytes": 1092
+    },
+    "l2train_m8_p8_b48_t256_i1": {
+      "read_bytes": 262144,
+      "write_bytes": 2298
+    },
+    "l2train_m8_p8_b48_t32_i1": {
+      "read_bytes": 262144,
+      "write_bytes": 282
+    },
+    "l2train_m8_p8_b48_t32_i4": {
+      "read_bytes": 262144,
+      "write_bytes": 1128
+    }
+  }
+}
