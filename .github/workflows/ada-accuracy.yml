@@ -1,0 +1,66 @@
+# Ada accuracy checks.
+#
+# Runs docs/ada/scripts/run_ci_checks.sh, which is fixture-based and takes about
+# a second: no GPU, no CUDA, no simulator build, and no experiments tree. That is
+# the whole point of the frozen fixtures under docs/ada/evidence/ -- it lets the
+# two guards that exist because a wrong number reached a report and then a code
+# change run on a plain GitHub-hosted runner.
+#
+# Therefore this job deliberately does NOT use the self-hosted
+# tgrogers-* runners the other workflows in this directory use; those belong to
+# the upstream project and exist for GPU builds.
+#
+# The path filter keeps a push that touches only the simulator source from
+# spending a runner on checks that cannot observe it. Remove the `paths:` blocks
+# if you would rather have it run on every push; the cost is a runner start,
+# not the checks themselves.
+
+name: Ada Accuracy Checks
+
+on:
+  push:
+    paths:
+      - 'docs/ada/**'
+      - '.github/workflows/ada-accuracy.yml'
+  pull_request:
+    paths:
+      - 'docs/ada/**'
+      - '.github/workflows/ada-accuracy.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ada-accuracy-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  accuracy-checks:
+    name: accuracy checks (frozen fixtures)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      - name: Run Ada accuracy checks
+        # pipefail so `tee` cannot swallow the script's exit code.
+        run: |
+          set -o pipefail
+          ./docs/ada/scripts/run_ci_checks.sh 2>&1 | tee /tmp/ada_checks.txt
+
+      - name: Job summary
+        if: always()
+        run: |
+          {
+            echo '### Ada accuracy checks'
+            echo
+            echo '```'
+            cat /tmp/ada_checks.txt 2>/dev/null || echo '(no output captured)'
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
