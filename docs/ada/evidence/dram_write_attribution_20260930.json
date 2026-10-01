@@ -29,93 +29,93 @@
       "read_bytes": 9269755424
     },
     "idx0_myfix_partial": {
-      "cycles": 28225281,
-      "write_bytes": 53813600,
-      "read_bytes": 2121464320
+      "cycles": 86244839,
+      "write_bytes": 73246400,
+      "read_bytes": 7838896640
     }
   },
   "matched_read_bytes_tracking": [
     {
-      "read_bytes": 176953088,
-      "fix111_write_bytes": 9788000,
-      "myfix_write_bytes": 2875360,
-      "ratio": 0.29376379239885575
+      "read_bytes": 653261984,
+      "fix111_write_bytes": 39529632,
+      "myfix_write_bytes": 15001568,
+      "ratio": 0.3795018380135692
     },
     {
-      "read_bytes": 353889472,
-      "fix111_write_bytes": 21681824,
-      "myfix_write_bytes": 7718496,
-      "ratio": 0.355989237805823
+      "read_bytes": 1306494048,
+      "fix111_write_bytes": 80866464,
+      "myfix_write_bytes": 31961696,
+      "ratio": 0.3952404299512836
     },
     {
-      "read_bytes": 530854592,
-      "fix111_write_bytes": 32061024,
-      "myfix_write_bytes": 12535904,
-      "ratio": 0.3910013604057063
+      "read_bytes": 1959724960,
+      "fix111_write_bytes": 122332640,
+      "myfix_write_bytes": 48979040,
+      "ratio": 0.4003758931385769
     },
     {
-      "read_bytes": 707750368,
-      "fix111_write_bytes": 43803712,
-      "myfix_write_bytes": 17324128,
-      "ratio": 0.3954945188206881
+      "read_bytes": 2612973888,
+      "fix111_write_bytes": 163713760,
+      "myfix_write_bytes": 65968096,
+      "ratio": 0.40294777909932555
     },
     {
-      "read_bytes": 884670912,
-      "fix111_write_bytes": 54576608,
-      "myfix_write_bytes": 21671008,
-      "ratio": 0.39707502525624166
+      "read_bytes": 3266227872,
+      "fix111_write_bytes": 168952800,
+      "myfix_write_bytes": 69195168,
+      "ratio": 0.4095532480077276
     },
     {
-      "read_bytes": 1061629248,
-      "fix111_write_bytes": 65888512,
-      "myfix_write_bytes": 26174176,
-      "ratio": 0.39724946285021584
+      "read_bytes": 3919450432,
+      "fix111_write_bytes": 170157216,
+      "myfix_write_bytes": 69693600,
+      "ratio": 0.40958357005558904
     },
     {
-      "read_bytes": 1238572384,
-      "fix111_write_bytes": 77123616,
-      "myfix_write_bytes": 30817376,
-      "ratio": 0.39958416887506937
+      "read_bytes": 4572717600,
+      "fix111_write_bytes": 171357056,
+      "myfix_write_bytes": 70190880,
+      "ratio": 0.40961768157361433
     },
     {
-      "read_bytes": 1415488192,
-      "fix111_write_bytes": 87919904,
-      "myfix_write_bytes": 34621024,
-      "ratio": 0.393779137884409
+      "read_bytes": 5225971584,
+      "fix111_write_bytes": 172562976,
+      "myfix_write_bytes": 70689824,
+      "ratio": 0.40964652811736396
     },
     {
-      "read_bytes": 1592446752,
-      "fix111_write_bytes": 98825568,
-      "myfix_write_bytes": 39283168,
-      "ratio": 0.3975000477609195
+      "read_bytes": 5879244000,
+      "fix111_write_bytes": 173721248,
+      "myfix_write_bytes": 71177248,
+      "ratio": 0.409721026180977
     },
     {
-      "read_bytes": 1769361504,
-      "fix111_write_bytes": 110510432,
-      "myfix_write_bytes": 44121440,
-      "ratio": 0.3992513575550949
+      "read_bytes": 6532439040,
+      "fix111_write_bytes": 176411840,
+      "myfix_write_bytes": 72249664,
+      "ratio": 0.4095511049598485
     },
     {
-      "read_bytes": 1946278304,
-      "fix111_write_bytes": 122328544,
-      "myfix_write_bytes": 48978272,
-      "ratio": 0.40038302098976997
+      "read_bytes": 7185676000,
+      "fix111_write_bytes": 177617920,
+      "myfix_write_bytes": 72748096,
+      "ratio": 0.40957633103686836
     },
     {
-      "read_bytes": 2123227680,
-      "fix111_write_bytes": 132707552,
-      "myfix_write_bytes": 53817056,
-      "ratio": 0.4055312240255928
+      "read_bytes": 7838899040,
+      "fix111_write_bytes": 178825408,
+      "myfix_write_bytes": 73246400,
+      "ratio": 0.4095972760201951
     }
   ],
   "projection": {
     "method": "match the two full runs on cumulative DRAM *read* bytes (a writeback-fix-invariant progress proxy) and apply the steady-state myfix/fix111 write-bytes ratio to fix111's completed full-run total",
     "progress_proxy": "cumulative dram_read_bytes",
-    "steady_state_ratio_mean": 0.39903977427729587,
-    "steady_state_ratio_min": 0.393779137884409,
-    "steady_state_ratio_max": 0.4055312240255928,
-    "samples": 7,
+    "steady_state_ratio_mean": 0.4068555334673972,
+    "steady_state_ratio_min": 0.3952404299512836,
+    "steady_state_ratio_max": 0.409721026180977,
+    "samples": 11,
     "fix111_full_write_bytes": 182248320,
-    "projected_myfix_full_write_bytes": 72724328.47521639
+    "projected_myfix_full_write_bytes": 74148737.45713691
   }
 }
